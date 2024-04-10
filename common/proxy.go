@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"net/http/httputil"
@@ -22,10 +21,19 @@ import (
 var (
 	BING_SYDNEY_DOMAIN = "https://sydney.bing.com"
 	// BING_CHAT_URL, _ = url.Parse(BING_CHAT_DOMAIN + "/sydney/ChatHub")
-	BING_SYDNEY_URL, _  = url.Parse(BING_SYDNEY_DOMAIN)
-	BING_URL, _         = url.Parse("https://www.bing.com")
-	EDGE_SVC_URL, _     = url.Parse("https://edgeservices.bing.com")
-	KEEP_REQ_HEADER_MAP = map[string]bool{
+	BING_SYDNEY_URL, _              = url.Parse(BING_SYDNEY_DOMAIN)
+	BING_URL, _                     = url.Parse("https://www.bing.com")
+	EDGE_SVC_URL, _                 = url.Parse("https://edgeservices.bing.com")
+	BING_SR_URT, _                  = url.Parse("https://sr.bing.com")
+	DISIGNER_URL, _                 = url.Parse("https://designer.microsoft.com")
+	DISIGNER_CDN_URL, _             = url.Parse("https://cdn.designerapp.osi.office.net")
+	DISIGNER_APP_URL, _             = url.Parse("https://designerapp.officeapps.live.com")
+	DISIGNER_APP_EDOG_URL, _        = url.Parse("https://designerapp.edog.officeapps.live.com")
+	DISIGNER_DOCUMENT_URL, _        = url.Parse("https://document.designerapp.officeapps.live.com")
+	DISIGNER_USERASSETS_URL, _      = url.Parse("https://userassets.designerapp.officeapps.live.com")
+	DISIGNER_MEDIASUGGESTION_URL, _ = url.Parse("https://mediasuggestion.designerapp.officeapps.live.com")
+	DISIGNER_RTC_URL, _             = url.Parse("https://rtc.designerapp.officeapps.live.com")
+	KEEP_REQ_HEADER_MAP             = map[string]bool{
 		"Accept":                         true,
 		"Accept-Encoding":                true,
 		"Accept-Language":                true,
@@ -56,12 +64,15 @@ var (
 	}
 	USER_TOKEN_COOKIE_NAME          = "_U"
 	USER_KievRPSSecAuth_COOKIE_NAME = "KievRPSSecAuth"
-	USER_RwBf_COOKIE_NAME           = "_RwBf"
 	User_MUID_COOKIE_NAME           = "MUID"
+	USER_RwBf_COOKIE_NAME           = "_RwBf"
 	RAND_COOKIE_INDEX_NAME          = "BingAI_Rand_CK"
 	RAND_IP_COOKIE_NAME             = "BingAI_Rand_IP"
+	PASS_SERVER_COOKIE_NAME         = "BingAI_Pass_Server"
 	PROXY_WEB_PREFIX_PATH           = "/web/"
 	PROXY_WEB_PAGE_PATH             = PROXY_WEB_PREFIX_PATH + "index.html"
+
+	DEBUG_PROXY_WEB, _ = url.Parse("http://localhost:4000")
 )
 
 func NewSingleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
@@ -88,9 +99,13 @@ func NewSingleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
 		if strings.Contains(req.Referer(), "web/compose.html") {
 			req.Header.Set("Referer", fmt.Sprintf("%s/edgesvc/compose", EDGE_SVC_URL.String()))
 			req.Header.Set("Origin", EDGE_SVC_URL.String())
-		} else {
-			req.Header.Set("Referer", fmt.Sprintf("%s/search?q=Bing+AI", BING_URL.String()))
+		} else if strings.Contains(originalPath, "/sydney/") {
+			req.Header.Set("Referer", fmt.Sprintf("%s/chat?q=Bing+AI", BING_URL.String()))
 			req.Header.Set("Origin", BING_URL.String())
+			req.Header.Set("Host", BING_SYDNEY_URL.Host)
+		} else {
+			req.Header.Set("Referer", fmt.Sprintf("%s/chat?q=Bing+AI", BING_URL.String()))
+			req.Header.Set("Origin", target.String())
 		}
 
 		// 同一会话尽量保持相同的随机IP
@@ -104,25 +119,30 @@ func NewSingleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
 		req.Header.Set("X-Forwarded-For", randIP)
 
 		ckUserMUID, _ := req.Cookie(User_MUID_COOKIE_NAME)
-		if ckUserMUID == nil || ckUserMUID.Value == "" {
-			if USER_MUID != "" {
-				// 添加 MUID Cookie
-				req.AddCookie(&http.Cookie{
-					Name:  User_MUID_COOKIE_NAME,
-					Value: USER_MUID,
-				})
-			}
+		if (ckUserMUID == nil || ckUserMUID.Value == "") && USER_MUID != "" {
+			// 添加 MUID Cookie
+			req.AddCookie(&http.Cookie{
+				Name:  User_MUID_COOKIE_NAME,
+				Value: USER_MUID,
+			})
 		}
 
 		ckUserKievRPSSecAuth, _ := req.Cookie(USER_KievRPSSecAuth_COOKIE_NAME)
-		if ckUserKievRPSSecAuth == nil || ckUserKievRPSSecAuth.Value == "" {
-			if USER_KievRPSSecAuth != "" {
-				// 添加 KievRPSSecAuth Cookie
-				req.AddCookie(&http.Cookie{
-					Name:  USER_KievRPSSecAuth_COOKIE_NAME,
-					Value: USER_KievRPSSecAuth,
-				})
-			}
+		if (ckUserKievRPSSecAuth == nil || ckUserKievRPSSecAuth.Value == "") && USER_KievRPSSecAuth != "" {
+			// 添加 KievRPSSecAuth Cookie
+			req.AddCookie(&http.Cookie{
+				Name:  USER_KievRPSSecAuth_COOKIE_NAME,
+				Value: USER_KievRPSSecAuth,
+			})
+		}
+
+		ckUserRwBf, _ := req.Cookie(USER_RwBf_COOKIE_NAME)
+		if (ckUserRwBf == nil || ckUserRwBf.Value == "") && USER_RwBf != "" {
+			// 添加 RwBf Cookie
+			req.AddCookie(&http.Cookie{
+				Name:  USER_RwBf_COOKIE_NAME,
+				Value: USER_RwBf,
+			})
 		}
 
 		// 未登录用户
@@ -142,25 +162,14 @@ func NewSingleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
 			// }
 		}
 
-		ckUserRwBf, _ := req.Cookie(USER_RwBf_COOKIE_NAME)
-		if ckUserRwBf == nil || ckUserRwBf.Value == "" {
-			if USER_RwBf != "" {
-				// 添加 RwBf Cookie
-				req.AddCookie(&http.Cookie{
-					Name:  USER_RwBf_COOKIE_NAME,
-					Value: USER_RwBf,
-				})
-			}
-		}
-
 		ua := req.UserAgent()
 		isMobile := strings.Contains(ua, "Mobile") || strings.Contains(ua, "Android")
 
 		// m pc 画图大小不一样
 		if isMobile {
-			req.Header.Set("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 15_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.7 Mobile/15E148 Safari/605.1.15 BingSapphire/1.0.410529013")
+			req.Header.Set("User-Agent", User_Agent_Mobile)
 		} else {
-			req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36 Edg/117.0.2045.55")
+			req.Header.Set("User-Agent", User_Agent)
 		}
 
 		for hKey := range req.Header {
@@ -177,32 +186,39 @@ func NewSingleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
 		cookies := res.Cookies()
 		res.Header.Set("Set-Cookie", "")
 		for _, cookie := range cookies {
-			values := strings.Split(cookie.String(), ";")
-			res.Header.Add("Set-Cookie", values[0]+"; "+values[1])
+			if strings.Contains(cookie.String(), ";") {
+				values := strings.Split(cookie.String(), ";")
+				res.Header.Add("Set-Cookie", values[0]+"; "+values[1])
+			} else {
+				res.Header.Add("Set-Cookie", cookie.String())
+			}
 		}
 		contentType := res.Header.Get("Content-Type")
-		if strings.Contains(contentType, "text/javascript") {
+		if strings.Contains(contentType, "text/javascript") || strings.Contains(contentType, "application/javascript") || strings.Contains(contentType, "text/html") {
 			contentEncoding := res.Header.Get("Content-Encoding")
 			switch contentEncoding {
 			case "gzip":
-				// log.Println("ContentEncoding : ", contentEncoding, " Path : ", originalPath)
+				Logger.Debug("ContentEncoding : ", contentEncoding, " Path : ", originalPath)
 				modifyGzipBody(res, originalScheme, originalHost)
 			case "br":
-				// log.Println("ContentEncoding : ", contentEncoding, " Path : ", originalPath)
+				Logger.Debug("ContentEncoding : ", contentEncoding, " Path : ", originalPath)
 				modifyBrBody(res, originalScheme, originalHost)
 			default:
-				log.Println("ContentEncoding default : ", contentEncoding, " Path : ", originalPath)
+				Logger.Debug("ContentEncoding default : ", contentEncoding, " Path : ", originalPath)
 				modifyDefaultBody(res, originalScheme, originalHost)
 			}
 		}
 
 		// 修改响应 cookie 域
-		// resCookies := res.Header.Values("Set-Cookie")
-		// if len(resCookies) > 0 {
-		// 	for i, v := range resCookies {
-		// 		resCookies[i] = strings.ReplaceAll(strings.ReplaceAll(v, ".bing.com", originalHost), "bing.com", originalHost)
-		// 	}
-		// }
+		resCookies := res.Header.Values("Set-Cookie")
+		if len(resCookies) > 0 {
+			res.Header.Del("Set-Cookie")
+			for _, v := range resCookies {
+				if v != "" {
+					res.Header.Add("Set-Cookie", strings.Split(v, "; ")[0]+"; path=/")
+				}
+			}
+		}
 
 		// 设置服务器 cookie 对应索引
 		if resCKRandIndex != "" {
@@ -224,8 +240,8 @@ func NewSingleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
 			for _, delLocationDomain := range DEL_LOCATION_DOMAINS {
 				if strings.HasPrefix(location, delLocationDomain) {
 					res.Header.Set("Location", location[len(delLocationDomain):])
-					log.Println("Del Location Domain ：", location)
-					log.Println("RandIP : ", randIP)
+					Logger.Debug("Del Location Domain ：", location)
+					Logger.Debug("RandIP : ", randIP)
 					// 换新ip
 					randIP = GetRandomIP()
 				}
@@ -250,7 +266,7 @@ func NewSingleHostReverseProxy(target *url.URL) *httputil.ReverseProxy {
 		return nil
 	}
 	errorHandler := func(res http.ResponseWriter, req *http.Request, err error) {
-		log.Println("代理异常 ：", err)
+		Logger.Error("代理异常 ：", err)
 		res.Write([]byte(err.Error()))
 	}
 
@@ -299,7 +315,7 @@ func getRandCookie(req *http.Request) (int, string) {
 	if ckRandIndex != nil && ckRandIndex.Value != "" {
 		tmpIndex, err := strconv.Atoi(ckRandIndex.Value)
 		if err != nil {
-			log.Println("ckRandIndex err ：", err)
+			Logger.Error("ckRandIndex err ：", err)
 			return 0, ""
 		}
 		if tmpIndex < utLen {
@@ -316,19 +332,30 @@ func replaceResBody(originalBody string, originalScheme string, originalHost str
 	modifiedBodyStr := originalBody
 
 	if originalScheme == "https" {
-		if strings.Contains(modifiedBodyStr, BING_URL.Host) {
-			modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, BING_URL.Host, originalHost)
-		}
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, BING_URL.Host, originalHost)
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, EDGE_SVC_URL.Host, originalHost)
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, BING_SR_URT.Host, originalHost)
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, DISIGNER_CDN_URL.Host, originalHost+"/designer/cdn")
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, DISIGNER_APP_EDOG_URL.Host, originalHost+"/designer/app-edog")
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, DISIGNER_DOCUMENT_URL.Host, originalHost+"/designer/document")
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, DISIGNER_USERASSETS_URL.Host, originalHost+"/designer/userassets")
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, DISIGNER_MEDIASUGGESTION_URL.Host, originalHost+"/designer/mediasuggestion")
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, DISIGNER_RTC_URL.Host, originalHost+"/designer/rtc")
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, DISIGNER_APP_URL.Host, originalHost+"/designer/app")
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, DISIGNER_URL.Host, originalHost+"/designer")
 	} else {
 		originalDomain := fmt.Sprintf("%s://%s", originalScheme, originalHost)
-		if strings.Contains(modifiedBodyStr, BING_URL.String()) {
-			modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, BING_URL.String(), originalDomain)
-		}
-	}
-
-	// 对话暂时支持国内网络，而且 Vercel 还不支持 Websocket ，先不用
-	if strings.Contains(modifiedBodyStr, BING_URL.Host) {
-		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, BING_URL.Host, originalHost)
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, BING_URL.String(), originalDomain)
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, EDGE_SVC_URL.Host, originalHost)
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, BING_SR_URT.String(), originalDomain)
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, DISIGNER_CDN_URL.String(), originalDomain+"/designer/cdn")
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, DISIGNER_APP_EDOG_URL.String(), originalDomain+"/designer/app-edog")
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, DISIGNER_DOCUMENT_URL.String(), originalDomain+"/designer/document")
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, DISIGNER_USERASSETS_URL.String(), originalDomain+"/designer/userassets")
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, DISIGNER_MEDIASUGGESTION_URL.String(), originalDomain+"/designer/mediasuggestion")
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, DISIGNER_RTC_URL.String(), originalDomain+"/designer/rtc")
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, DISIGNER_APP_URL.String(), originalDomain+"/designer/app")
+		modifiedBodyStr = strings.ReplaceAll(modifiedBodyStr, DISIGNER_URL.String(), originalDomain+"/designer")
 	}
 
 	// if strings.Contains(modifiedBodyStr, "https://www.bingapis.com") {

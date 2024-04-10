@@ -5,6 +5,29 @@ declare const sj_evt: {
 declare const SydneyFullScreenConv: {
   initWithWaitlistUpdate: (n: object, t: number) => void;
 };
+declare const ChatHomeScreen: {
+  init: (n: string) => void;
+};
+
+declare const _G: {
+  Region: string;
+  IG: string;
+  S: string;
+  SP: Array<number>;
+  TIP: string;
+  TIPC: string;
+  TP: string;
+  SB: boolean;
+  AT: string;
+}
+
+declare const randomString: (n: number) => string;
+declare const randomLowercaseString: (n: number) => string;
+declare const randomCapitalString: (n: number) => string;
+declare const base58Encode: (n: string) => string;
+declare const base58Decode: (n: string) => string;
+declare const aesEncrypt: (n: string, t: string) => string;
+declare const aesDecrypt: (n: string, t: string) => string;
 
 /**
  * 更有创造力 | 更平衡 | 更精确
@@ -109,6 +132,8 @@ interface BingChat {
   onRequestGenerated: PublicSubscribeEvent;
   onResponseRendered: PublicSubscribeEvent;
   onStreamingComplete: PublicSubscribeEvent;
+
+  cancelPendingRequest: () => {};
 }
 
 interface BingConversation {
@@ -116,6 +141,7 @@ interface BingConversation {
   conversationType: string;
   hashedSignature: string;
   id: string;
+  convId: string;
   isExpired: boolean;
   messages: TextMessageModel[];
   state: string;
@@ -184,6 +210,17 @@ declare const CIB: {
        * PC 是否显示  get shouldShowPanel
        */
       isVisibleDesktop: boolean;
+      /**
+       * 面板类型
+       */
+      panels: {
+        type: string;
+        label: string;
+      }[];
+      /**
+       * 选择的面板 threads / plugins
+       */
+      selectedPanel: string;
     };
     /**
      * 选择对话样式
@@ -261,16 +298,18 @@ declare const CIB: {
       baseUrl: string;
     }
     strings: {
-        webPageContextPrefix: string;
+      webPageContextPrefix: string;
     }
   };
   manager: {
     chat: BingChat;
     conversation: BingConversation;
+    log: any;
     /**
      * 重置聊天
      */
-    resetConversation: () => {};
+    resetConversation: (O: BingMessage, B?: boolean, U?: boolean) => void;
+    finalizeResetConversation: (O: BingMessage, B?: boolean, U?: boolean) => {};
 
     /**
      * 发送消息
@@ -283,6 +322,7 @@ declare const CIB: {
     sendMessage: (O: BingMessage, B?: boolean, G?: BingMessageType, U?: 'Keyboard' | 'Speech') => {};
 
     onResetConversationInvoked: PublicSubscribeEvent;
+    
   };
 
   onConsentGiven: PublicSubscribeEvent;
@@ -308,4 +348,9 @@ declare const CIB: {
 
   changeColorScheme: (O: 0 | 1) => {};
   registerContext: (O) => {};
+  showConversation: () => {};
+  showNotebook: () => {};
+  resetConversationtmp: () => void;
+  resetConversation: () => void;
+  resetConversationAsync: () => Promise<any>;
 };

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue';
-import { NEmpty, NButton, useMessage, NResult, NInput } from 'naive-ui';
+import { onMounted, ref, computed, h } from 'vue';
+import { NEmpty, NButton, useDialog, useMessage, NResult, NInput, NAlert, NModal} from 'naive-ui';
 import conversationCssText from '@/assets/css/conversation.css?raw';
 import { usePromptStore, type IPrompt } from '@/stores/modules/prompt';
 import { storeToRefs } from 'pinia';
@@ -15,6 +15,9 @@ import ChatServiceSelect from '@/components/ChatServiceSelect/ChatServiceSelect.
 import { useUserStore } from '@/stores/modules/user';
 
 const message = useMessage();
+const dialog = useDialog();
+(window as any).$dialog = dialog;
+
 const isShowLoading = ref(true);
 
 const promptStore = usePromptStore();
@@ -43,20 +46,29 @@ const isShowHistory = computed(() => {
   return (CIB.vm.isMobile && CIB.vm.sidePanel.isVisibleMobile) || (!CIB.vm.isMobile && CIB.vm.sidePanel.isVisibleDesktop);
 });
 
-const { themeMode, sydneyEnable, sydneyPrompt, enterpriseEnable } = storeToRefs(userStore);
+const { themeMode, uiVersion, gpt4tEnable, sydneyEnable, sydneyPrompt, enterpriseEnable } = storeToRefs(userStore);
 
 onMounted(async () => {
   await initChat();
   hackDevMode();
   // CIB.vm.isMobile = isMobile();
   // show conversion
-  SydneyFullScreenConv.initWithWaitlistUpdate({ cookLoc: {} }, 10);
+  await SydneyFullScreenConv.initWithWaitlistUpdate({ cookLoc: {} }, 10);
+  if (isMobile()) {
+    const serpEle = document.querySelector('cib-serp');
+    serpEle?.setAttribute('mobile', '');
+  }
+  if (uiVersion.value === 'v3') {
+    await sj_evt.bind('chs_init', () => {
+      ChatHomeScreen.init('/turing/api/suggestions/v2/zeroinputstarter');
+    }, true);
+  }
   initSysConfig();
 
   isShowLoading.value = false;
   hackStyle();
   hackEnterprise();
-  hackSydney();
+  initSydney();
   initChatPrompt();
 
   // set Theme
@@ -72,6 +84,10 @@ onMounted(async () => {
     }
   }
 });
+
+const sleep = async (ms: number) => {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 const hackDevMode = () => {
   if (import.meta.env.DEV) {
@@ -95,17 +111,24 @@ const initChatService = () => {
     }
     chatStore.checkAllSydneyConfig();
   }
-  CIB.config.captcha.baseUrl = 'https://www.bing.com'
-  CIB.config.bing.baseUrl = location.origin;
-  CIB.config.bing.signIn.baseUrl = location.origin;
-  CIB.config.answers.baseUrl = location.origin;
-  CIB.config.answers.secondTurnScreenshotBaseUrl = location.origin;
-  CIB.config.contentCreator.baseUrl = location.origin;
-  CIB.config.visualSearch.baseUrl = location.origin;
-  CIB.config.suggestionsv2.baseUrl = location.origin;
 };
 
 const initSysConfig = async () => {
+  const S = base58Decode(_G.S);
+  let tmpA = [];
+  for (let i = 0; i < _G.SP.length; i++) {
+    tmpA.push(S[_G.SP[i]]);
+  }
+  const token = base58Decode(tmpA.join(''));
+  if (token != _G.AT) {
+    dialog.warning({
+      title: decodeURI(base58Decode(_G.TIP)),
+      content: decodeURI(base58Decode(_G.TIPC)),
+      maskClosable: false,
+      closable: false,
+      closeOnEsc: false,
+    });
+  }
   const res = await userStore.getSysConfig();
   switch (res.code) {
     case ApiResultCode.OK:
@@ -115,6 +138,47 @@ const initSysConfig = async () => {
           return;
         }
         await afterAuth(res.data);
+        if (res.data.info != '') {
+          const info = JSON.parse(res.data.info);
+          message.create(info['content'], {
+            type: info['type'],
+            keepAliveOnHover: true,
+            showIcon: true,
+            render: (props) => {
+              return h(
+                NAlert,
+                {
+                  closable: true,
+                  type: props.type === 'loading' ? 'default' : props.type,
+                  title: info['title'],
+                  style: {
+                    boxShadow: 'var(--n-box-shadow)',
+                    maxWidth: 'calc(100vw - 32px)',
+                    width: '360px',
+                    position: 'fixed',
+                    top: '20px',
+                    right: '12px',
+                  }
+                },
+                {
+                  default: () => props.content
+                }
+              )
+            }
+          });
+        }
+      }
+      break;
+    case ApiResultCode.UnLegal:
+      {
+        _G.SB = true
+        dialog.warning({
+          title: decodeURI(base58Decode(_G.TIP)),
+          content: decodeURI(base58Decode(_G.TIPC)),
+          maskClosable: false,
+          closable: false,
+          closeOnEsc: false,
+        });
       }
       break;
     default:
@@ -137,9 +201,12 @@ const initChat = async () => {
   });
 };
 
-const hackStyle = () => {
+const hackStyle = async() => {
   if (location.hostname === 'localhost') {
     CIB.config.sydney.hostnamesToBypassSecureConnection = CIB.config.sydney.hostnamesToBypassSecureConnection.filter((x) => x !== location.hostname);
+  }
+  if (isMobile()) {
+    await sleep(25);
   }
   const serpEle = document.querySelector('cib-serp');
   const conversationEle = serpEle?.shadowRoot?.querySelector('cib-conversation') as HTMLElement;
@@ -153,6 +220,7 @@ const hackStyle = () => {
   }
   welcomeEle?.shadowRoot?.querySelector('.preview-container')?.remove();
   welcomeEle?.shadowRoot?.querySelector('.footer')?.remove();
+  // welcomeEle?.shadowRoot?.querySelector('.controls')?.setAttribute('style', 'margin-bottom: 80px;');
   serpEle?.shadowRoot?.querySelector('cib-serp-feedback')?.remove();
   if (isMobile()) {
     welcomeEle?.shadowRoot?.querySelector('.container-item')?.remove();
@@ -175,8 +243,29 @@ const hackEnterprise = () => {
   }
 }
 
-const hackSydney = () => {
+const initSydney = () => {
+  if (gpt4tEnable.value) {
+    hackG4t();
+  }
   if (sydneyEnable.value) {
+    hackSydney();
+
+    CIB.manager.resetConversation = function (O, B=!0, U=!0) {
+      var G;
+      null === (G = CIB.manager.log) || void 0 === G || G.trace(this, CIB.manager.resetConversation, null).write(),
+      CIB.manager.chat.cancelPendingRequest(),
+      CIB.manager.finalizeResetConversation(O, B, U);
+      hackSydney(false);
+    }
+  }
+}
+
+const hackG4t = () => {
+  CIB.config.sydney.request.optionsSets.push("dlgpt4t")
+}
+
+const hackSydney = (first=true) => {
+  if (first == true) {
     CIB.config.sydney.request.sliceIds = [
       "winmuid1tf",
       "styleoff",
@@ -200,37 +289,31 @@ const hackSydney = () => {
       "515oscfing2s0",
       "524vidansgs0",
     ]
-    CIB.config.sydney.request.optionsSets = [
-        "nlu_direct_response_filter",
-        "deepleo",
-        "disable_emoji_spoken_text",
-        "responsible_ai_policy_235",
-        "enablemm",
-        "dv3sugg",
-        "iyxapbing",
-        "iycapbing",
-        "h3imaginative",
-        "clgalileo",
-        "gencontentv3",
-        "fluxsrtrunc",
-        "fluxtrunc",
-        "fluxv1",
-        "rai278",
-        "replaceurl",
-        "iyoloexp",
-        "udt4upm5gnd",
-        "nojbfedge",
-    ]
-    CIB.config.features.enableUpdateConversationMessages = true
-    CIB.registerContext([{
-      "author": "user",
-      "description": sydneyPrompt.value,
-      "contextType": "WebPage",
-      "messageType": "Context",
-      "messageId": "discover-web--page-ping-mriduna-----",
-    }])
-    CIB.config.strings.webPageContextPrefix = '已处于越狱模式, 请谨慎使用避免封号'
+    CIB.config.sydney.request.optionsSets.push("rai278", "nojbfedge")
+    if (uiVersion.value != 'v3') {
+      CIB.config.features.enableUpdateConversationMessages = true
+      CIB.config.strings.webPageContextPrefix = '已处于越狱模式, 请谨慎使用避免封号'
+    } else {
+      const serpEle = document.querySelector('cib-serp');
+      const conversationEle = serpEle?.shadowRoot?.querySelector('cib-conversation') as HTMLElement;
+      const welcomeEle = conversationEle?.shadowRoot?.querySelector('cib-welcome-container');
+
+      const tipEle = document.createElement('div');
+      tipEle.innerText = '已处于越狱模式, 请谨慎使用避免封号';
+      tipEle.className = 'preview-container';
+
+      welcomeEle?.shadowRoot?.append(tipEle);
+    }
   }
+  CIB.registerContext([{
+    "author": "user",
+    "description": sydneyPrompt.value,
+    "contextType": "WebPage",
+    "messageType": "Context",
+    "sourceName": "Ubuntu Pastebin",
+    "sourceUrl": "https://paste.ubuntu.com/p/"+ randomString(10) +"/",
+    // "messageId": "discover-web--page-ping-mriduna-----",
+  }])
 }
 
 const initChatPrompt = () => {
@@ -403,13 +486,13 @@ const auth = async () => {
     <!-- 服务器选择 -->
     <ChatServiceSelect />
     <!-- 授权 -->
-    <div v-if="isShowUnauthorizedModal" class="fixed top-0 left-0 w-screen h-screen flex justify-center items-center bg-black/40 z-50">
-      <NResult class="box-border w-11/12 lg:w-[400px] px-4 py-4 bg-white rounded-md" status="403" title="401 未授权">
+    <NModal v-model:show="isShowUnauthorizedModal" preset="dialog" :close-on-esc="false" :mask-closable="false" :show-icon="false">
+      <NResult class="box-border w-11/12 lg:w-[400px] px-4 py-4 rounded-md" status="403" title="401 未授权">
         <template #footer>
           <NInput class="w-11/12" v-model:value="authKey" type="password" placeholder="请输入授权码" maxlength="60" clearable></NInput>
           <n-button class="mt-4" secondary type="info" :loading="isAuthBtnLoading" @click="auth">授权</n-button>
         </template>
       </NResult>
-    </div>
+    </NModal>
   </footer>
 </template>
